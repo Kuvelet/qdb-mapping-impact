@@ -1,0 +1,20 @@
+/*
+TEMPLATE ONLY. Copy to an ignored private/ location and replace the placeholders
+after data-owner approval. Run in the same session as 10_impact_report.sql.
+This read-only source integration still consumes tempdb and source resources.
+It adds an input copy before the core snapshot; see docs/architecture.md.
+*/
+SET NOCOUNT ON;
+DROP TABLE IF EXISTS #PortfolioNotes;
+DROP TABLE IF EXISTS #PortfolioApplications;
+
+SELECT CONVERT(nvarchar(max), [Note]) AS [Note],
+       CONVERT(nvarchar(max), [MappingStatus]) AS [MappingStatus]
+INTO #PortfolioNotes
+FROM [YOUR_DATABASE].[reporting].[YOUR_APPROVED_NOTES_SOURCE];
+
+SELECT [Description], [BodyStyle], [BrakeType], [CarbNumber], [CarbType],
+       [Color], [Connection Type], [Cylinder Head Type], [Emissions],
+       [FootNote], [Lead Length], [Note], [OE Number], [Split Year]
+INTO #PortfolioApplications
+FROM [YOUR_DATABASE].[reporting].[YOUR_APPROVED_APPLICATION_SOURCE];

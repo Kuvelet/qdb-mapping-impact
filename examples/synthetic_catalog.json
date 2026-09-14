@@ -1,0 +1,18 @@
+{
+  "notice": "Entirely invented application records and note text. No real Qdb identifiers or licensed reference data.",
+  "notes": [
+    {"Note": "With auxiliary filter", "MappingStatus": "Mapped"},
+    {"Note": "Two-port inlet", "MappingStatus": "Mapped"},
+    {"Note": "Without sensor", "MappingStatus": ""},
+    {"Note": "Legacy service note", "MappingStatus": "Mapped"},
+    {"Note": "For export package", "MappingStatus": ""}
+  ],
+  "applications": [
+    {"Description": "Fuel Valve", "BodyStyle": "With auxiliary filter", "Note": "With auxiliary filter", "Connection Type": "Two-port inlet", "FootNote": "Without sensor"},
+    {"Description": "Fuel Valve", "Note": "With auxiliary filter"},
+    {"Description": "Fuel Sensor", "Note": "Without sensor"},
+    {"Description": "Fuel Valve", "Note": "Unlisted requirement"},
+    {"Description": null, "Note": "Two-port inlet"},
+    {"Description": "Service Hose", "Note": "Unlisted requirement", "Position": "With auxiliary filter"}
+  ]
+}
