@@ -1,6 +1,0 @@
-# Portfolio setup ranges, not a recovered lockfile from the original workstation.
-# Install only to preview Excel or run an authorized live workflow.
-pandas>=2.0,<4
-openpyxl>=3.1,<4
-selenium>=4.6,<5
-tqdm>=4.66,<5

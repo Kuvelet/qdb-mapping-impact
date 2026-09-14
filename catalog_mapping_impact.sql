@@ -1,19 +1,17 @@
 /*
-Portfolio edition: Qdb Mapping Impact
-Requires SQL Server 2017+ and database compatibility level 110+.
-Run sql/00_demo_inputs.sql and this file in the SAME session, or use an
-approved private input adapter implementing #PortfolioNotes and
-#PortfolioApplications. No permanent catalog objects are modified.
-The entire file must run together. Temporary work tables are released at end.
-Metrics count application rows, not the numeric vehicles-in-operation value.
-See docs/metrics.md for grain, denominators, and non-additivity rules.
+Qdb mapping project: consolidated impact-report logic for a portfolio case study.
+Source identifiers are redacted. This is not a ready-to-run deployment script.
+See README.md for the business context, counting rules, and edition provenance.
+
+Input contracts:
+  [YOUR_DATABASE].[dbo].[YOUR_MAPPING_STATUS_TABLE]: Note, MappingStatus
+  [YOUR_DATABASE].[dbo].[YOUR_APPLICATION_VIEW]: Description and 13 searched fields
+
+SQL Server 2017+; database compatibility level 110+.
+All stages belong to one SQL session. Only temporary analysis tables are written.
+The counts represent application source rows, not numeric vehicles in operation.
 */
 SET NOCOUNT ON;
-
-IF OBJECT_ID('tempdb..#PortfolioNotes') IS NULL
-    THROW 50000, 'Missing inputs. Run the input adapter in this session first.', 1;
-IF OBJECT_ID('tempdb..#PortfolioApplications') IS NULL
-    THROW 50000, 'Missing inputs. Run the input adapter in this session first.', 1;
 
 DROP TABLE IF EXISTS #QdbImpactInput;
 DROP TABLE IF EXISTS #QdbImpactDistinctNotes;
@@ -35,7 +33,7 @@ SELECT
     UPPER(LTRIM(RTRIM(COALESCE(CONVERT(nvarchar(max), [MappingStatus]), N''))))
         COLLATE Latin1_General_100_BIN2 AS StatusText
 INTO #QdbImpactInput
-FROM #PortfolioNotes;
+FROM [YOUR_DATABASE].[dbo].[YOUR_MAPPING_STATUS_TABLE];
 
 IF NOT EXISTS (SELECT 1 FROM #QdbImpactInput)
     THROW 50001, 'The imported mapping table is empty. Check the import first.', 1;
@@ -81,7 +79,7 @@ SELECT
     a.[Connection Type], a.[Cylinder Head Type], a.[Emissions], a.[FootNote],
     a.[Lead Length], a.[Note], a.[OE Number], a.[Split Year]
 INTO #QdbImpactVio
-FROM #PortfolioApplications AS a;
+FROM [YOUR_DATABASE].[dbo].[YOUR_APPLICATION_VIEW] AS a;
 
 CREATE UNIQUE CLUSTERED INDEX IX_QdbImpactVio_Id ON #QdbImpactVio (VioRowId);
 
