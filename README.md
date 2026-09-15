@@ -1,3 +1,5 @@
+![Innovative Logic PartSmart PIM](partsmart-pim.png)
+
 # Qdb Mapping Automation and Catalog Impact Analysis
 
 **Python automation for catalog mapping, with SQL analysis that makes the work measurable.**
@@ -10,7 +12,9 @@ Standard Motor Products | Python | Selenium | pandas | SQL Server | PowerShell
 
 A single catalog note can appear on thousands of application records. Mapping that note is one task, but its relevance can extend across many products and descriptions. Managing the work therefore requires more than a completed-item count: it requires a way to apply prepared mappings, identify priorities, and explain their application-level effect.
 
-At Standard Motor Products, I developed three Excel-driven Python/Selenium scripts to automate Qdb mapping entry in the product information management (PIM) system. I paired that work with SQL Server analysis of **32,840 unique notes across 4,496,986 VIO application rows**.
+At Standard Motor Products, I loaded a **70-million-row source file** into SQL Server with bcp, extracted distinct notes, and brought them into Excel to determine each note's Qdb text and parameter values. I developed three Python/Selenium scripts to apply those prepared mappings through the PartSmart product information management (PIM) system.
+
+After the mapping work, I used SQL Server to analyze its application-level effect. The combined analysis connects **32,840 unique notes to 4,496,986 VIO application rows**. The 70-million-row import and the VIO application population are separate datasets with different purposes: one supplied source notes; the other provided the application context for measurement.
 
 The combined tracker brings together **Low Confidence, 100% Confidence, Date, and OE Number mappings**, including previously completed work. It connects the mapping list to the application catalog, shows where each note appears, and reports both current progress and the potential effect of completing the remaining list.
 
@@ -107,39 +111,49 @@ A unique note is a distinct cleaned text value across the entire imported list, 
 
 ## The Solution and My Role
 
-The work has two connected parts: **Python applies prepared instructions through PIM; SQL measures the status and application context of the mapping list.** The handoff between them remains operator-managed.
+The workflow connects large-file ingestion, mapping preparation, automated entry, and measurement. **SQL prepares the distinct-note work list, Excel holds the mapping decisions, Python applies them through PIM, and SQL analyzes the results.** The handoffs remain operator-managed.
 
 ```text
-Source notes -> unique-note list -> mapping review and prepared Excel instructions
-                                        |
-                                        v
-                            Python / Selenium PIM entry
-                                        |
-                                        v
-                        Operator review and status maintenance
-                                        |
-                                        v
-             Combined status-list import + VIO application view
-                                        |
-                                        v
-                   SQL summary + note-by-description report
+70-million-row source file
+    |
+    v
+bcp import into SQL Server
+    |
+    v
+SQL extraction of distinct notes
+    |
+    v
+Excel review: determine Qdb text and parameter values for each note
+    |
+    v
+Prepared Excel workbook -> Python / Selenium mapping in PartSmart PIM
+    |
+    v
+Operator review and mapping-status maintenance
+    |
+    v
+SQL analysis: combined status list + VIO application view
+    |
+    v
+Overall progress and effect summary + note-by-description detail
 ```
 
 | Area | My contribution |
 |---|---|
-| Data preparation | Extracted distinct notes from raw SQL data and handled large-TSV ingestion using PowerShell and bcp |
+| Data ingestion | Used bcp from PowerShell to load a 70-million-row source file into SQL Server |
+| Mapping preparation | Extracted distinct notes with SQL, brought them into Excel, and determined the Qdb text and parameter values for each note |
 | Automation | Developed three Python/Selenium workflows for no-, single-, and dual-parameter mapping entry |
 | SQL development | Matched notes across 13 application fields and retained their note, row, column, and description relationships |
 | Data quality | Accounted for duplicate notes, status conflicts, unmatched notes, and overlapping application matches |
 | Performance | Used staged temporary tables and compact hash-assisted joins to make large-text analysis practical |
-| Prioritization | Worked with Herman to select description clusters using matching-note occurrence totals |
+| Prioritization | Selected description clusters using matching-note occurrence totals |
 | Reporting | Built a project summary and detailed tracker with business-readable measures |
 
 The working mapping list is maintained outside SQL and imported manually when updated. This was appropriate for the expected refresh frequency. There is no automatic Excel-to-SQL synchronization, and the Python logs do not directly update the reporting table.
 
 ## The Python Automation
 
-The three scripts process prepared Excel instructions and repeat actions in the PIM interface. They do not discover mappings, assign confidence, or decide whether two phrases mean the same thing.
+I supplied the Excel files containing the Qdb text and parameters I had determined for the notes. The three scripts read those prepared instructions and repeated the mapping actions in the PartSmart PIM interface. They do not discover mappings, assign confidence, or decide whether two phrases mean the same thing.
 
 | Script | Main workbook inputs | Mapping task |
 |---|---|---|
@@ -182,14 +196,14 @@ The latest report is [catalog_mapping_impact_v2.sql](catalog_mapping_impact_v2.s
 
 ### Prepare a Distinct Work List
 
-The basic analytical unit starts with distinct source text:
+I first used bcp to load the 70-million-row source file into a raw SQL Server table. I then extracted its distinct notes:
 
 ```sql
 SELECT DISTINCT [Note]
 FROM [dbo].[LowConfidence_Raw];
 ```
 
-Separating a raw import from a unique-note list preserves the original records while creating a manageable review population. For an export too large to inspect or load comfortably through the import wizard, I used PowerShell and bcp to bring the TSV into SQL Server before extracting notes.
+Keeping the raw import separate preserved the original records while creating a manageable review population. I brought the distinct notes into Excel, determined their corresponding Qdb text and parameters, and used that workbook as input to the Python mapping scripts. SQL was therefore used both before automation, to prepare the notes, and afterward, to analyze mapping status and application effect.
 
 The current combined analysis trims ordinary leading and trailing spaces, validates statuses, and counts each distinct cleaned note once. Blank notes, an empty list, unexpected status values, and conflicting statuses are rejected before the large application view is read.
 
@@ -311,9 +325,9 @@ An unmatched note and an unmatched application row are different cases. A note m
 
 ## Prioritization and Team Reporting
 
-Herman and I established a description-by-description work order using **matching-note occurrences in descending order across all unique notes in the Low Confidence Qdb report**.
+I established a description-by-description work order using **matching-note occurrences in descending order across all unique notes in the Low Confidence Qdb report**.
 
-The first description cluster included **Carburetor Float, Carburetor Kit, Choke Thermostat, Choke Pull Off, and Pre Heater Hose**. We continued the mapping work according to those agreed priorities.
+The first description cluster included **Carburetor Float, Carburetor Kit, Choke Thermostat, Choke Pull Off, and Pre Heater Hose**. I continued the mapping work according to those priorities.
 
 The ranking used matching **cells**, which identify concentrations of recurring note text. It was not a revenue, severity, or unique-row ranking. The combined report now exposes that same occurrence metric across all four groups, supporting review of priorities within the expanded scope without implying that a new order has already been agreed.
 
@@ -386,6 +400,7 @@ The latest analysis is **v2**. The earlier SQL file remains unchanged so the pre
 | [dualparameter.py](dualparameter.py) | Original dual-parameter mapping workflow |
 | [catalog_mapping_impact_v2.sql](catalog_mapping_impact_v2.sql) | Current combined-list report, including note groups and note-level matching-cell counts |
 | [catalog_mapping_impact.sql](catalog_mapping_impact.sql) | Earlier reporting edition, retained as the v1 reference under its original filename |
+| [partsmart-pim.png](partsmart-pim.png) | Supplied PartSmart platform image displayed at the top of this README |
 
 The Python files preserve the supplied scripts, with the private PIM URL replaced by a placeholder and a short archival header added. Workbook names, batch offsets, logging labels, and execution behavior are retained. They execute work at module level and should not be imported or run merely to inspect them.
 
@@ -399,4 +414,6 @@ There is intentionally no demo dataset, test package, CI workflow, deployment to
 
 The company name and aggregate figures were approved by the project owner for this case study. Raw company records, mapping workbooks, credentials, private endpoints, and licensed reference-database content are excluded.
 
-This is an independent portfolio case study, not an official Standard Motor Products or Auto Care Association publication. Referenced standards and names belong to their respective owners. No software redistribution license is granted here.
+The supplied Innovative Logic PartSmart image identifies the PIM platform used in the workflow. It is included for project context and does not imply endorsement.
+
+This is an independent portfolio case study, not an official Standard Motor Products, Innovative Logic, or Auto Care Association publication. Referenced standards, names, and marks belong to their respective owners. No software redistribution license is granted here.
