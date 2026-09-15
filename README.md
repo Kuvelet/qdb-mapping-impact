@@ -1,6 +1,6 @@
 # Qdb Mapping Automation and Catalog Impact Analysis
 
-**A Python and SQL project connecting catalog-mapping work to its application-level reach.**
+**Python automation for catalog mapping, with SQL analysis that makes the work measurable.**
 
 By [Can Kuvelet](https://github.com/Kuvelet)
 
@@ -8,234 +8,279 @@ Standard Motor Products | Python | Selenium | pandas | SQL Server | PowerShell
 
 ## Project Overview
 
-One catalog note can appear on thousands of application records. That makes a mapping decision a small unit of work with potentially broad relevance. It also makes progress surprisingly difficult to explain: completing one note is not the same as improving one application, and counting every occurrence is not the same as counting distinct applications.
+A single catalog note can appear on thousands of application records. Mapping that note is one task, but its relevance can extend across many products and descriptions. Managing the work therefore requires more than a completed-item count: it requires a way to apply prepared mappings, identify priorities, and explain their application-level effect.
 
-At Standard Motor Products, I worked on the Low Confidence Qdb mapping project to address two connected needs: **apply prepared mappings through the product information management system, and understand where that work matters across the catalog.**
+At Standard Motor Products, I developed three Excel-driven Python/Selenium scripts to automate Qdb mapping entry in the product information management (PIM) system. I paired that work with SQL Server analysis of **32,840 unique notes across 4,496,986 VIO application rows**.
 
-I used three Python/Selenium scripts to automate repetitive PIM entry for mappings with no parameters, one parameter, or two parameters. I used SQL Server to connect the unique-note backlog and mapping status to the application catalog, identify review priorities, and build a progress tracker.
+The combined tracker brings together **Low Confidence, 100% Confidence, Date, and OE Number mappings**, including previously completed work. It connects the mapping list to the application catalog, shows where each note appears, and reports both current progress and the potential effect of completing the remaining list.
 
-The analysis covered **11,656 unique notes and 4,486,697 application rows**. At the reported stage, **4,173 notes were marked mapped, representing 35.80% of the backlog**. The complete note list occurred on **573,991 unique application rows across 631 description groups**.
+This repository is a **portfolio case study and code showcase**, not an installation package. The README explains the business reasoning and technical decisions; the original Python scripts and versioned SQL reporting logic provide the implementation detail.
 
-This repository is a **case study and code showcase of that work**, not a reusable software product or a reproduction kit. The explanation is here in the README; the four project scripts are linked below.
+## Results at a Glance
+
+**25,556 of 32,840 unique notes are marked mapped: 77.82% completion.**
+
+| Metric | Currently mapped | If all notes in the combined list were mapped |
+|---|---:|---:|
+| Unique notes mapped | 25,556 | 32,840 |
+| Mapping completion | 77.82% | 100.00% |
+| Unique VIO application rows affected | 269,523 | 680,521 |
+| Share of all VIO application rows | 5.99% | 15.13% |
+| Description groups affected | 473 | 749 |
+
+The analysis searched **4,496,986 application rows**. Mapped notes occur in **405,197 matching cells**. There are **7,284 notes remaining** without mapped status.
+
+Here, **affected** means that an application row contains at least one matching note in the relevant mapped or full-list scope. It is not a count of verified fitment corrections. The potential totals include the current effect.
+
+These are project-owner-reported SQL results from the combined-list analysis, not results reproduced from the private application source in this repository.
 
 ## Contents
 
 - [The business problem](#the-business-problem)
 - [What Qdb is and why it matters](#what-qdb-is-and-why-it-matters)
-- [My role and approach](#my-role-and-approach)
-- [How the project developed](#how-the-project-developed)
+- [Project scope](#project-scope)
+- [The solution and my role](#the-solution-and-my-role)
 - [The Python automation](#the-python-automation)
 - [The SQL analysis](#the-sql-analysis)
+- [Reading the reports](#reading-the-reports)
 - [Making the counts trustworthy](#making-the-counts-trustworthy)
 - [Prioritization and team reporting](#prioritization-and-team-reporting)
-- [Reported progress and potential reach](#reported-progress-and-potential-reach)
 - [Business value and catalog health](#business-value-and-catalog-health)
-- [What I learned](#what-i-learned)
+- [Engineering decisions and lessons](#engineering-decisions-and-lessons)
 - [The project files](#the-project-files)
 
 ## The Business Problem
 
-The low-confidence report provided notes requiring mapping review, but a list alone could not answer the questions needed to manage the project:
+A mapping spreadsheet describes work to perform, but it does not explain how that work relates to the catalog.
 
-- Which notes were distinct review items, rather than repetitions of the same text?
-- Where did each note appear in the application catalog?
-- Which product descriptions contained the greatest concentration of those occurrences?
-- How could prepared mappings be entered without manually repeating the same interface sequence?
-- How much of the backlog was mapped, and how broadly did those notes appear?
-- What would the full list's application coverage look like when all its notes were mapped?
+The same source text can appear repeatedly, in different fields, and under multiple product descriptions. Some notes occur frequently; others do not appear in the searched application data at all. Meanwhile, entering prepared mappings in the PIM system requires repeating the same filtering, selection, parameter-entry, and saving steps.
 
-These questions crossed several kinds of work. There was a data-preparation problem, a repeated-entry problem, a prioritization problem, and a measurement problem.
+I needed to answer several connected questions:
 
-Reviewing only the raw records would obscure the distinct decisions. Reviewing only unique notes would obscure their application context. Reporting only a mapped-note count would obscure their reach.
+- What are the distinct notes to review and map?
+- How can I automate repeated entry while keeping the mapping decision with the reviewer?
+- Which application fields and product descriptions contain each note?
+- Which descriptions contain the most matching-note occurrences?
+- How much work is complete, and how many distinct application rows contain those mapped notes?
+- What is the total application-level effect represented by the complete mapping list?
 
-The project connected those views: **a note as a review item, its occurrences as context, and application rows as the basis for catalog coverage.**
+Counting only notes would hide their frequency. Counting only occurrences would overstate the number of distinct application rows involved. Keeping separate spreadsheets for each mapping group would make the overall project harder to explain.
+
+The solution connects **notes as work items, cells as occurrences, and application rows as the catalog records affected**.
 
 ## What Qdb Is and Why It Matters
 
-**Qdb stands for Qualifier Database.** Maintained by the Auto Care Association, it supplies standardized, coded fitment expressions used with ACES. Some qualifiers contain parameters that hold variable values. [Official Qdb overview](https://www.autocare.org/data-and-information/data-standards/databases/qualifier-database-qdb).
+**Qdb stands for Qualifier Database.** Maintained by the Auto Care Association, it standardizes fitment terminology used with ACES. Coded qualifiers represent application conditions consistently, and parameters hold variable values within those expressions. [Official Qdb overview](https://www.autocare.org/data-and-information/data-standards/databases/qualifier-database-qdb).
 
-In plain language, a fitment qualifier expresses a condition attached to an application. An invented example such as "After serial 1000" illustrates why the wording alone may not be enough: a reviewer must establish which serial number is meant and how the boundary should be represented. The appropriate qualifier and its parameter must preserve that meaning. This is a teaching example, not an official Qdb entry or recommended mapping.
+For example, an invented note such as "After serial 1000" contains both a condition and a value. A reviewer must determine what serial number is meant and whether the boundary is represented correctly. Selecting a qualifier without preserving that meaning would not be a successful mapping. This example is illustrative, not an official Qdb record.
 
-### Where ACES and PIES Fit
+### The ACES and PIES Connection
 
-| Component | What it communicates | Connection to this project |
+| Component | Purpose | Relationship to this project |
 |---|---|---|
-| ACES: Aftermarket Catalog Exchange Standard | Product fitment information, including the applications for which a part is cataloged | The mapping initiative concerns application qualifications |
-| Qdb: Qualifier Database | Standardized qualifier expressions supporting ACES | The Python scripts enter supplied Qdb selections and parameter values |
-| PIES: Product Information Exchange Standard | Product information such as descriptions, attributes, and other product content | Complementary catalog context; this project does not perform PIES attribute mapping or validate PIES files |
+| ACES: Aftermarket Catalog Exchange Standard | Communicates product fitment information | Provides the application-data context for qualifier mapping |
+| Qdb: Qualifier Database | Supplies standardized qualifier expressions supporting ACES | Provides the prepared qualifier selections and parameter structures entered through PIM |
+| PIES: Product Information Exchange Standard | Communicates product information, including descriptions, attributes, and other product content | Complements fitment data in the broader catalog; not a mapping target of these scripts |
 
 Sources: [Auto Care ACES](https://www.autocare.org/aces), [PIES](https://www.autocare.org/pies), and [Qdb](https://www.autocare.org/data-and-information/data-standards/databases/qualifier-database-qdb).
 
-For an aftermarket business, catalog information must remain useful beyond the manufacturer's own system. Important application conditions need to survive interpretation by data recipients and part-lookup users. Auto Care identifies more consistent interpretation and validation among the benefits of coded qualifiers. [Qdb business context](https://www.autocare.org/data-and-information/data-standards/databases/qualifier-database-qdb).
+In the aftermarket, application conditions must remain understandable as information moves from a manufacturer to trading partners and part-lookup systems. Standardized qualifiers support more consistent interpretation and validation than unrestricted free text. [Qdb business context](https://www.autocare.org/data-and-information/data-standards/databases/qualifier-database-qdb).
 
-That is the reason to invest in careful mapping, not a reason to automate judgment away. **A standardized but incorrect condition is still a catalog problem.** Low confidence identifies work for review; it does not automatically mean that a part's fitment is wrong.
+That is the motivation for careful mapping, not a reason to automate judgment away. A standardized but incorrect condition is still a catalog problem. This project supports qualifier mapping; it does not generate ACES/PIES files, map PIES attributes, or certify standards compliance.
 
-## My Role and Approach
+## Project Scope
 
-I connected the execution work to the analysis needed to organize and explain it.
+The tracker consolidates four mapping groups:
+
+| Mapping group | What it represents in the combined tracker |
+|---|---|
+| Low Confidence | Notes from the low-confidence Qdb report |
+| 100% Confidence | Previously completed mappings from the 100% confidence group |
+| Date | Previously completed date-related mappings |
+| OE Number | Previously completed original-equipment-number mappings |
+
+The imported group labels are `LowConfidence`, `100_Confidence`, `Date`, and `OEs`. These identify work categories, not predictions produced by the Python scripts. Mapping completion comes from the separate `MappingStatus` field.
+
+**Brief background:** The tracker began with 11,656 low-confidence notes. I expanded it by adding my previously completed 100% Confidence, Date, and OE Number mappings so that one analysis could describe the broader Qdb mapping automation project. The current 77.82% completion rate refers to that combined population, not a directly comparable increase from the earlier low-confidence-only rate.
+
+A unique note is a distinct cleaned text value across the entire imported list, not one item per group. If a note belongs to several groups, the report lists those groups together without multiplying its matches. Conflicting mapped statuses for the same note stop the query for correction.
+
+## The Solution and My Role
+
+The work has two connected parts: **Python applies prepared instructions through PIM; SQL measures the status and application context of the mapping list.** The handoff between them remains operator-managed.
+
+```text
+Source notes -> unique-note list -> mapping review and prepared Excel instructions
+                                        |
+                                        v
+                            Python / Selenium PIM entry
+                                        |
+                                        v
+                        Operator review and status maintenance
+                                        |
+                                        v
+             Combined status-list import + VIO application view
+                                        |
+                                        v
+                   SQL summary + note-by-description report
+```
 
 | Area | My contribution |
 |---|---|
-| Data preparation | Extracted unique notes from raw SQL data; later worked through large-TSV ingestion using PowerShell and bcp |
-| Mapping automation | Used Excel-driven Python/Selenium scripts for no-, single-, and dual-parameter PIM mapping workflows |
-| SQL development | Matched notes across application fields, added description context, and staged the analysis to address execution and text-size problems |
-| Metric design | Separated matching cells, per-note matching rows, and overall unique application coverage |
+| Data preparation | Extracted distinct notes from raw SQL data and handled large-TSV ingestion using PowerShell and bcp |
+| Automation | Developed three Python/Selenium workflows for no-, single-, and dual-parameter mapping entry |
+| SQL development | Matched notes across 13 application fields and retained their note, row, column, and description relationships |
+| Data quality | Accounted for duplicate notes, status conflicts, unmatched notes, and overlapping application matches |
+| Performance | Used staged temporary tables and compact hash-assisted joins to make large-text analysis practical |
 | Prioritization | Worked with Herman to select description clusters using matching-note occurrence totals |
-| Communication | Created an overall progress table and a detailed report with business-readable column names |
+| Reporting | Built a project summary and detailed tracker with business-readable measures |
 
-The responsibilities remained distinct: a person supplied the mapping decision, Python repeated the PIM entry, and SQL measured status and occurrence. The mapping-status list was refreshed manually; the scripts did not automatically update the SQL tracker.
+The working mapping list is maintained outside SQL and imported manually when updated. This was appropriate for the expected refresh frequency. There is no automatic Excel-to-SQL synchronization, and the Python logs do not directly update the reporting table.
 
-## How the Project Developed
+## The Python Automation
 
-### Start with a Manageable Review Population
+The three scripts process prepared Excel instructions and repeat actions in the PIM interface. They do not discover mappings, assign confidence, or decide whether two phrases mean the same thing.
 
-The SQL work began with a straightforward distinct-note query against an existing raw table:
+| Script | Main workbook inputs | Mapping task |
+|---|---|---|
+| [automation_noparameter.py](automation_noparameter.py) | `Note`, `QDB Text` | Selects the supplied Qdb text without entering parameter values |
+| [singleparameterauto.py](singleparameterauto.py) | `Note`, `QDB Text`, `Note Parameters` | Selects the qualifier and enters one supplied value |
+| [dualparameter.py](dualparameter.py) | `Note`, `QDB Text`, `Note1 Parameter`, `Note2 Parameter` | Enters two supplied values for From/To-style mappings |
+
+The no-parameter script can retain an optional `Note Parameters` value in its report, but does not enter it in PIM. The three script variants describe parameter-entry requirements; they are not a one-to-one assignment to the four mapping groups.
+
+### The Repeated Workflow
+
+After the operator logs in and navigates to the grid, each script:
+
+1. Filters the Name column for the source note.
+2. Locates the filtered result and removes its existing mapping.
+3. Opens Add QDB and searches for the supplied qualifier text.
+4. Selects the result and enters the required parameters, if any.
+5. Clicks Save and waits for the interface.
+6. Records the row outcome and proceeds through the workbook.
+
+pandas handles workbook processing, Selenium WebDriver handles browser interaction, and CSV/text logs capture outcomes and runtime information. A configurable starting Excel row supports batch processing.
+
+### Handling a Changing Interface
+
+The difficult part was managing page state between actions. Grid refreshes, loading indicators, menus, and parameter widgets required explicit waits and fresh element lookups.
+
+The scripts include quote-safe XPath construction, selected retries, loading checks, and dropdown handling. The single-parameter workflow also uses a JavaScript-dispatched context-menu event. These details support the repeated entry sequence in the particular PIM interface used for the project.
+
+### Operator Responsibilities
+
+The dual-parameter script selects parameter options by position, first index 0 and then index 1. It does not validate labels, range order, or units.
+
+The original scripts record `Success` after the Save sequence without reading back the persisted mapping. They remove the previous mapping before adding its replacement, so the operation is not atomic. The original post-removal missing-result path records a skip and continues.
+
+These behaviors are preserved in the original code. The scripts represent an **attended workflow for applying prepared decisions**, with operator review still needed to verify outcomes and maintain mapped status.
+
+## The SQL Analysis
+
+The latest report is [catalog_mapping_impact_v2.sql](catalog_mapping_impact_v2.sql). It reads the combined note/status/group list and the application view, and returns an overall summary plus note-by-description detail.
+
+### Prepare a Distinct Work List
+
+The basic analytical unit starts with distinct source text:
 
 ```sql
 SELECT DISTINCT [Note]
 FROM [dbo].[LowConfidence_Raw];
 ```
 
-This separated repeated records from the unique text values that needed review. Keeping the raw table separate preserved the source context while providing a smaller, reusable backlog.
+Separating a raw import from a unique-note list preserves the original records while creating a manageable review population. For an export too large to inspect or load comfortably through the import wizard, I used PowerShell and bcp to bring the TSV into SQL Server before extracting notes.
 
-A unique text value was a useful unit of work, but not proof that the same mapping would be valid in every context. I therefore needed to find where each note was used.
+The current combined analysis trims ordinary leading and trailing spaces, validates statuses, and counts each distinct cleaned note once. Blank notes, an empty list, unexpected status values, and conflicting statuses are rejected before the large application view is read.
 
-### Add Field and Product Context
+The imported group header may be `Group` or have surrounding spaces. The query resolves that header from SQL metadata and quotes its identifier with `QUOTENAME`. Multiple distinct groups for one note are aggregated into a semicolon-separated list.
 
-The application view was in another database on the same SQL Server. I expanded the search beyond the `Note` column because listed text could also appear in fields such as `CarbType`, `FootNote`, and `BodyStyle`.
+### Search the Application Fields
 
-The requirement evolved from a total match count to counts by matching column, then to matching descriptions. Early versions combined distinct descriptions with semicolons. As description-based prioritization became the focus, the report changed to one detail row per note and description.
-
-Notes with no matches stayed visible. Otherwise, unresolved items would disappear simply because the occurrence query did not find them.
-
-### Make the Analysis Practical
-
-An early query ran for more than an hour. The expanding joins and text aggregations made repeated analysis difficult.
-
-I worked through a staged approach using temporary tables, indexed hash-assisted joins, and reusable match results. This also addressed long-text index warnings and `STRING_AGG` size errors. Later execution was substantially quicker according to the project run experience, although no controlled speedup benchmark was retained.
-
-At one point, description aggregation was limited to Position matches to reduce the work. It was expanded again after optimization. Position was subsequently removed from the final search scope, while Lead Length was added.
-
-### Bring in a Large Export
-
-Later, another TSV was too large to inspect comfortably or import through the wizard. I used PowerShell and bcp to load it into SQL Server, working through connection and command-availability issues along the way.
-
-After the load succeeded, the destination remained a Raw table, and the unique-note list was extracted separately. This extended the same workflow to data that was impractical to work with interactively.
-
-The ingestion commands were supporting work, not an additional application. The repository therefore keeps the four main scripts rather than introducing an import framework.
-
-### Connect Mapping Status and Simplify the Report
-
-The working mapping list identified each unique note as `Mapped` or blank. Importing that list into SQL made it possible to compare backlog progress with application reach.
-
-A live Excel-to-SQL connection was considered, but I chose manual refresh because updates were expected to be relatively infrequent.
-
-The report evolved through several exploratory metrics before settling into two complementary outputs: an overall summary and note-by-description detail. The final design kept the measures that supported decisions and removed confusing derived counts.
-
-These stages describe how the reasoning developed. They do not imply a precise calendar sequence between all Python and SQL work.
-
-## The Python Automation
-
-The three scripts automate repeated actions in the PIM interface using prepared Excel instructions. They do not discover mappings or score confidence.
-
-| Script | Workbook inputs | Mapping work |
-|---|---|---|
-| [automation_noparameter.py](automation_noparameter.py) | `Note`, `QDB Text` | Selects the supplied Qdb text without adding parameter values |
-| [singleparameterauto.py](singleparameterauto.py) | `Note`, `QDB Text`, `Note Parameters` | Selects the qualifier and enters one value |
-| [dualparameter.py](dualparameter.py) | `Note`, `QDB Text`, `Note1 Parameter`, `Note2 Parameter` | Enters two supplied values for From/To-style work |
-
-The no-parameter script can also retain an optional `Note Parameters` value in its report, but does not enter it in PIM.
-
-### The Repeated Workflow
-
-After the operator logs in and navigates to the grid, each script processes workbook rows and:
-
-1. Filters the Name column for the source note.
-2. Locates the filtered result.
-3. Removes its existing mapping.
-4. Opens Add QDB and searches the supplied qualifier text.
-5. Selects the result and enters any required parameters.
-6. Clicks Save, waits for the interface, and records the outcome.
-
-The scripts use pandas for workbook processing, Selenium WebDriver for browser interaction, and CSV/text logs for row outcomes and runtime information. The operator can set the starting Excel row for a batch.
-
-The practical challenge was not simply clicking buttons. The page changed while the script was working. The code includes explicit waits, loading-indicator checks, fresh element lookups after grid refresh, quote-safe XPath construction, and selected retries around dynamic menus and dropdowns. The single-parameter script also uses a JavaScript-dispatched context-menu event.
-
-The dual-parameter script selects visible parameter options by position, first index 0 and then index 1. It does not validate semantic labels, range order, or units. Prepared input and operator review remain important.
-
-### What the Automation Achieved
-
-The scripts moved a repeated sequence of PIM actions into code, allowing the operator to process prepared mapping instructions with per-row reporting. That is the automation contribution: **repeat the entry work after the mapping decision has been made.**
-
-The original scripts label completed Save actions `Success`, but do not read back the persisted mapping. They also remove the old mapping before adding the new one; replacement is not atomic, and the original post-removal missing-result path logs a skip and continues. These behaviors are preserved in the showcase rather than silently rewritten.
-
-The files document an attended, environment-specific workflow. They are not presented as unattended production software or a general-purpose mapping engine.
-
-## The SQL Analysis
-
-The single [catalog_mapping_impact.sql](catalog_mapping_impact.sql) file shows the reporting logic. Its two inputs are the unique-note/status list and the application view.
-
-### Search Scope
-
-The final analysis searches 13 fields:
+The analysis searches these 13 fields:
 
 **BodyStyle, BrakeType, CarbNumber, CarbType, Color, Connection Type, Cylinder Head Type, Emissions, FootNote, Lead Length, Note, OE Number, Split Year.**
 
-Position is excluded. A match means whole-cell text equality after the documented cleaning rules, not a substring or a semantically similar phrase.
+Position is excluded. Group membership, prepared Qdb text, parameter values, UOM, and the imported `MatchingColumns` field do not restrict the occurrence search.
 
-### Preserve Context Before Aggregating
+A match is **whole-cell equality after ordinary-space trimming**, with case and accents significant under the explicit binary collation used for note matching. It is not a substring, fuzzy, or semantic match. In particular, the SQL does not parse dates or split OE-number lists into separate values.
 
-The SQL assigns a row ID to each application-source row before expanding the searched fields with `CROSS APPLY (VALUES ...)`.
+### Preserve the Counting Unit
 
-The intermediate matching structure retains:
+Each row returned by the application view receives a temporary ID **before** its 13 searched fields are expanded through `CROSS APPLY (VALUES ...)`.
+
+The retained match structure is:
 
 ```text
 Note ID + Application Row ID + Matching Column
 ```
 
-That structure is the basis for both occurrence counts and distinct-row coverage. The report can preserve the relationship to the source description without treating each expanded cell as a separate application.
+This allows the report to count individual matching cells, collapse them to one note/application pair, and then deduplicate application IDs across multiple mapped notes. Description context is carried through those relationships.
 
-### Use Compact Keys for Long Text
+### Make Long-Text Matching Practical
 
-Long notes caused index-key size warnings in earlier queries. SHA2-256 hashes provide a fixed-width join key, while the full text remains part of the match condition:
+The note text remains `nvarchar(max)`. A fixed-width SHA2-256 hash provides a compact comparison key, followed by full-text equality:
 
 ```sql
 ON n.NoteHash = CONVERT(binary(32), HASHBYTES('SHA2_256', c.CleanValue))
 AND n.NoteText = c.CleanValue
 ```
 
-The hash assists matching; it does not replace verification. The displayed SQL uses `nvarchar(max)` for text and aggregation, ordinary-space trimming, and explicit binary collation. Case and accent differences therefore remain significant.
+The hash assists matching; it does not replace text verification. Indexed temporary tables retain reusable intermediate results instead of repeatedly rebuilding the same matches.
 
-### Stage the Work Once
+The query stages input validation, notes, the application snapshot, matching cells, distinct note/row pairs, and report aggregates. `COUNT_BIG` supports large counts, and `STRING_AGG` receives `nvarchar(max)` values for long lists.
 
-Temporary tables separate note preparation, the application snapshot, matched cells, distinct note/row pairs, and reporting aggregates. They make intermediate results reusable instead of repeatedly rebuilding the same relationships.
+Only temporary analysis tables are written. The source list and application view are read-only, and the temporary tables are released after the two reports are returned.
 
-These are analysis tables in the SQL session, not permanent catalog tables. The script returns reports and does not deploy Qdb mappings.
+## Reading the Reports
 
-### Two Outputs, Two Audiences
+### 1. Overall Project Summary
 
-| Output | What it shows | How it is used |
-|---|---|---|
-| Overall summary | Total notes, mapped notes, completion percentage, mapped-note cells, current unique-row coverage, and full-list row/description potential | Communicates scope and progress at project level |
-| Note-by-description detail | Mapping status, matching descriptions and columns, unique matching-row counts, number of descriptions per note, and all-list cell totals per description | Supports review, investigation, and description prioritization |
+The one-row summary answers two questions: **how much of the combined mapping list is complete, and how many application records contain its notes?**
 
-The detail report shows **counts of matching application rows**, not the actual application records. It retains unmatched notes and descriptions with no listed-note matches.
+| Measure | Interpretation |
+|---|---|
+| Total VIO rows searched | All rows returned by the application view; denominator for application percentages |
+| Total unique notes | Distinct cleaned notes across the combined list, including notes with no application match |
+| Notes marked mapped | Notes whose imported mapping status is `Mapped` |
+| Mapping completion percent | Mapped notes divided by total unique notes |
+| Cells containing mapped notes | Individual searched field values matching mapped notes |
+| Unique VIO rows containing mapped notes | Application rows containing at least one mapped-note match, counted once overall |
+| Percent of all VIO rows affected | Those distinct mapped-note rows divided by all rows searched |
+| Descriptions containing mapped notes | Distinct description groups with at least one mapped-note match |
+| Full-list potential rows, percentage, and descriptions | The same application-level scope considering all listed notes, whether mapped or not |
+
+**77.82% measures completion of note-level work; 5.99% measures the application-row effect of the mapped subset.** They have different denominators and are not expected to be similar.
+
+### 2. Note-by-Description Detail
+
+A normal detail row represents one note within one description. It shows:
+
+| Detail field | What a reader learns |
+|---|---|
+| Report Row Type | Whether this is a matched note/description, an unmatched note, or a description with no listed-note match |
+| VIO Description | The description associated with the matching application rows |
+| This Description - Matching Cells If All Combined QDB Mapping List Notes Were Mapped | Total occurrences of all listed notes within that description; used for prioritization |
+| Searched Note | The cleaned source note being analyzed |
+| Note Group | Its mapping category, or a semicolon-separated list if it belongs to multiple groups |
+| Mapping Status | `Mapped` or `Not Mapped`, based on the imported status |
+| VIO Match Status | Whether the note was found anywhere in the searched application fields |
+| This Note In This Description - Matching Cells | Individual matching field values for this note in this description |
+| This Note In This Description - Unique Matching VIO Rows | Distinct application rows containing this note within this description |
+| This Note In This Description - Matching VIO Columns | Distinct field names where it matched, listed with semicolons |
+| This Note Across All Descriptions - Number Of Descriptions | Number of description groups in which this note occurs |
+
+The report contains **counts of matching application rows, not the application records themselves**.
+
+A note found nowhere appears as `Note With No VIO Match`, with zero note-level cells and rows. A description with no listed-note match receives its own description-only row; note-specific fields are null because no note is associated with it. This prevents exceptions from disappearing from the report.
+
+The description-level cell total repeats beside each note in that description. It is a ranking value, not an additive detail measure. Similarly, a note's description count repeats wherever that note appears.
 
 ## Making the Counts Trustworthy
 
-The most important analytical lesson was that a match can be counted at different levels. Those levels answer different business questions.
+### Cells and Rows Answer Different Questions
 
-| Measure | What it counts |
-|---|---|
-| Unique notes | Distinct review items in the low-confidence report |
-| Matching cells | Individual searched field values that match listed notes |
-| This note's matching rows | Distinct application rows containing a particular note |
-| Overall matching rows | Distinct application rows containing at least one note in the selected mapped or full-list scope |
-| Description reach | Distinct description groups containing those notes |
-
-### Why Per-Note Counts Do Not Always Add Up
-
-Consider this invented illustration:
+Consider this invented example, with both Note A and Note B marked mapped:
 
 | Application row | Description | Note field | CarbType field |
 |---|---|---|---|
@@ -243,114 +288,115 @@ Consider this invented illustration:
 | 102 | Description A | Note A | No listed note |
 | 103 | Description B | Note A | No listed note |
 
-Note A matches three rows. Note B matches one. Together they produce **four matching cells on three unique application rows**, because row 101 is shared.
+Note A matches three cells on three rows. Note B matches one cell on one row. Together, they match **four cells on three unique application rows** because row 101 contains both notes.
 
-Neither note matches more than one column on any row. The overlap comes from different notes appearing on the same application. This explains why a per-note "extra column matches" value of zero does not eliminate overall overlap.
+Neither note needs to match multiple columns on the same row for this overlap to occur. Different notes can share an application row.
 
-The SQL calculates overall coverage from the union of row IDs. It does not add per-note row counts and call the result unique.
+That explains how the actual mapped-note results can contain **405,197 cells but 269,523 unique rows**. The difference is not the number of rows with multiple matches: one shared row can contribute more than one additional match.
 
-### Reconcile the Denominator
+### Safe Ways to Read the Totals
 
-In an earlier check, Carburetor Float had **43,778 source rows**, of which **43,684 contained a listed-note match**. The remaining **94** were outside that matched subset.
+- For a single note within one description, cells equal rows only if that note matches at most one searched field on each row.
+- Summing per-note unique-row counts can double-count shared application rows. Use the overall summary for the distinct project-wide total.
+- Filtering the detail report to `Mapped` and summing its **note-level matching cells** reconciles to the overall mapped-cell count for the same run.
+- Do not sum the repeated description-priority totals or repeated per-note description counts.
 
-A note with no application match is not the same as an application with no listed-note match. That distinction led to clearer denominators and reporting language. This historical example is separate from the aggregate snapshot below.
+### What an Application Row Represents
 
-An application source row is also not the numeric VIO value. The report does not sum vehicles in operation or count distinct real-world vehicles. Each source-view output row is counted as a record; duplicate-looking source rows remain separate.
+These counts refer to output records from the VIO application view, not the numeric `VIO` field, a sum of vehicles in operation, or distinct real-world vehicles. Each source-view output row receives a separate ID; duplicate-looking rows remain separate.
+
+Descriptions are grouped using the database's collation, without additional description trimming in v2. Null descriptions are counted as one separate group and displayed as `(No description)`.
+
+An unmatched note and an unmatched application row are different cases. A note may never appear in the application source; an application may simply contain none of the listed notes. The overall denominator still includes every application row searched.
 
 ## Prioritization and Team Reporting
 
-Herman and I prioritized the mapping work **description by description**, using **matching-note occurrences in descending order across all unique notes in the Low Confidence Qdb report**.
+Herman and I established a description-by-description work order using **matching-note occurrences in descending order across all unique notes in the Low Confidence Qdb report**.
 
-The first description cluster included:
+The first description cluster included **Carburetor Float, Carburetor Kit, Choke Thermostat, Choke Pull Off, and Pre Heater Hose**. We continued the mapping work according to those agreed priorities.
 
-- Carburetor Float
-- Carburetor Kit
-- Choke Thermostat
-- Choke Pull Off
-- Pre Heater Hose
+The ranking used matching **cells**, which identify concentrations of recurring note text. It was not a revenue, severity, or unique-row ranking. The combined report now exposes that same occurrence metric across all four groups, supporting review of priorities within the expanded scope without implying that a new order has already been agreed.
 
-This provided a recognizable product context and a measurable reason for the work order. The ranking used matching **cells**, not unique application rows. It highlighted concentrations of recurring note text; it was not a revenue, severity, or incremental-coverage ranking.
+A note selected while reviewing one description may also appear under others. The detail report makes that broader context visible, while the overall summary avoids counting shared application rows more than once.
 
-A note can recur beyond the description currently being reviewed. Its mapping may therefore be relevant to additional descriptions, subject to confirming that the meaning is appropriate in those contexts.
-
-For communication, I developed a compact progress table and an attached detailed report. The planned update cadence was every two weeks. The aim was to let colleagues see what was completed, why the next cluster was chosen, and what the full project scope represented without needing to interpret the SQL.
-
-## Reported Progress and Potential Reach
-
-The application population searched contained **4,486,697 rows**.
-
-| Metric | Reported mapped-note stage | If all listed notes were mapped |
-|---|---:|---:|
-| Unique notes marked mapped | 4,173 | 11,656 |
-| Share of note backlog mapped | 35.80% | 100.00% |
-| Matching cells containing those notes | 132,834 | Full-list total not reported |
-| Unique application rows containing those notes | 132,834 | 573,991 |
-| Share of application rows searched | 2.96% | 12.79% |
-| Description groups containing those notes | 11 | 631 |
-
-At that stage, **7,483 notes remained without mapped status**. The difference between current and full-list coverage was **441,157 additional potential application rows**.
-
-The most useful interpretation is that **35.80% of the note backlog was marked mapped, while the entire backlog occurred on 12.79% of the application rows searched**. These percentages measure different things. Notes vary in frequency and can share rows.
-
-The full-list scenario includes the currently covered rows. It is not an additional 573,991 applications, a forecast of delivered changes, or a count of corrected fitments. Likewise, a row containing a mapped note can still contain other unresolved content.
-
-These figures are the project-owner-reported SQL results. They establish the reported status and occurrence scope; no measured labor savings, sales increase, or return reduction is claimed.
+For team communication, I prepared a concise progress table with the detailed report attached and planned updates every two weeks. Colleagues can see completion, current and potential application effect, and the basis for description prioritization without interpreting SQL.
 
 ## Business Value and Catalog Health
 
-The business value comes from connecting work that would otherwise be difficult to manage as a whole.
+### Focus Review Where the Notes Recur
 
-### Make Specialist Effort More Focused
+The distinct-note list organizes the work into decisions rather than repeated source records. Description-level occurrence totals identify concentrations of that work, and the group field distinguishes mapping categories in the same report.
 
-A unique-note backlog turns repeated text into a review population. Description-level occurrence analysis adds the context and concentration needed to choose a work order. The team can explain why it is starting with a particular product group rather than simply working through spreadsheet order.
+This makes prioritization explainable: the team can point to the catalog context and frequency behind a selected description instead of relying on spreadsheet order.
 
-### Automate Repetitive Entry
+### Separate Expertise from Repeated Entry
 
-Once a mapping is prepared, the PIM steps are repetitive. The Python scripts perform those actions and record row outcomes, while leaving mapping selection and verification with the operator. This separates specialist judgment from the interface work needed to apply it.
+The Python workflows put repetitive PIM interactions into code. Prepared mapping selection and parameter review remain human responsibilities, while the scripts repeat the entry sequence and record outcomes.
 
-### Make Progress Meaningful
+The demonstrated contribution is an automated entry workflow, not a measured percentage reduction in labor or errors. No controlled time-savings benchmark was retained.
 
-A mapped-note total measures task status. It does not explain catalog coverage. The SQL tracker adds that second view, showing where the mapped notes occur and how much broader the complete backlog is.
+### Put Project Completion in Catalog Context
 
-This makes stakeholder reporting more useful: the discussion can distinguish work completed, repeated text in scope, and distinct applications involved.
+The combined tracker accounts for both ongoing low-confidence work and earlier completed mapping groups. It reports **25,556 mapped notes** alongside **269,523 distinct affected application rows**, making the difference between completed tasks and catalog effect visible.
 
-### Support More Consistent Catalog Content
+Completing the remaining list represents a potential total of **680,521 unique application rows across 749 description groups**. That includes the current effect, equivalent to **410,998 additional application rows** in the full-list set beyond the currently mapped subset. It does not mean every future note contributes new rows.
 
-The project supports a path toward more consistently represented application conditions: identify the note, review its meaning, apply the appropriate mapping, and understand where the source text appears.
+### Support Consistent Application Information
 
-For an aftermarket company, the intended downstream value is clearer application information, less interpretation work, and better-supported part selection. Those benefits depend on correct mapping decisions, deployment, and downstream handling. They are the business rationale, not measured outcomes of this report.
+The intended business value is a more consistent representation of application conditions, with less interpretation required when those conditions are consumed downstream. Correct mapping can support clearer part selection and more manageable catalog data.
 
-**Catalog health is broader than mapping completion.** Vehicle configurations, product information, qualifier correctness, parameters, and downstream presentation still need their own checks. Qdb work complements the broader ACES/PIES catalog process; it does not certify compliance or prove that the entire catalog is correct.
+Those benefits depend on accurate decisions, successful persistence, deployment, and downstream use. The tracker measures status and source-text occurrence, not delivered fitment corrections, sales increases, or return reductions.
 
-The immediate demonstrated contribution is a practical way to carry out the mapping work, select priorities, and communicate its scope with understandable measures.
+**Catalog health is broader than mapping completion.** Vehicle configurations, qualifier meaning, parameters, product attributes, and downstream presentation need their own checks. This project contributes a practical mapping and measurement workflow within that broader responsibility.
 
-## What I Learned
+## Engineering Decisions and Lessons
 
-The hardest part was not writing a match condition. It was agreeing on what the result meant.
+### Preserve the Relationship Before Counting It
 
-Separating notes, cells, and rows changed the report from a collection of large totals into a usable decision tool. Preserving unmatched notes and reconciling against the complete source population made the analysis more honest. Reworking slow queries made iteration practical. Revising the column names made the result understandable to people who had not written the SQL.
+The essential modeling decision was to keep note, application-row, and matching-column identities until each metric could be calculated at the correct level. Deduplicating too early would lose occurrences; aggregating too late without row identity would overstate application totals.
 
-The automation work reinforced a different lesson: repeated browser actions still need attention to state, timing, parameter order, and failure handling. Applying a prepared decision and verifying its result are separate responsibilities.
+### Stage Expensive Work and Keep Full Text
 
-Together, the project demonstrates **Python automation, SQL analysis, large-file handling, data modeling, performance troubleshooting, domain understanding, and stakeholder communication**. Its central contribution is connecting execution with measurement, without confusing repeated matches with distinct applications or potential reach with completed improvements.
+An early query ran for more than an hour. Temporary-table staging and indexed hash-assisted matching made later iterations substantially quicker in the project run experience, although no controlled speedup figure was recorded.
+
+Earlier long-text index warnings and `STRING_AGG` size errors informed the use of compact hash keys and `nvarchar(max)` text. The result was a query organized around reusable intermediate relationships, with full-value matching retained.
+
+### Treat Missing Matches as Useful Information
+
+Unmatched notes stay in the completion denominator and detail report. They can still represent mapping work even when the searched application source does not contain their text. Description-only exceptions likewise show where the imported list has no match.
+
+### Make Categories Informative, Not Multipliers
+
+Combining lists required a single note identity across groups, consistent status handling, and group aggregation that does not duplicate report rows. Group labels explain origin; they do not change equality rules or turn one note into several work items.
+
+### Distinguish Execution, Status, and Verification
+
+A successful browser sequence, a manually maintained mapped status, and a verified persisted mapping are different forms of evidence. Keeping those responsibilities explicit makes both the automation and its reported results easier to assess.
+
+Together, the work demonstrates **Python automation, SQL analysis, large-file handling, data modeling, performance troubleshooting, automotive catalog knowledge, and stakeholder communication**.
 
 ## The Project Files
+
+The latest analysis is **v2**. The earlier SQL file remains unchanged so the previous version stays available.
 
 | File | Purpose |
 |---|---|
 | [automation_noparameter.py](automation_noparameter.py) | Original no-parameter mapping workflow |
 | [singleparameterauto.py](singleparameterauto.py) | Original single-parameter mapping workflow |
 | [dualparameter.py](dualparameter.py) | Original dual-parameter mapping workflow |
-| [catalog_mapping_impact.sql](catalog_mapping_impact.sql) | Consolidated overall and detailed impact-report logic |
+| [catalog_mapping_impact_v2.sql](catalog_mapping_impact_v2.sql) | Current combined-list report, including note groups and note-level matching-cell counts |
+| [catalog_mapping_impact.sql](catalog_mapping_impact.sql) | Earlier reporting edition, retained as the v1 reference under its original filename |
 
-The Python files preserve the supplied scripts, with the private PIM URL replaced by a placeholder and a short archival header added. Original workbook names, batch offsets, logging labels, and execution behavior are retained. They run work at module level, so they should not be executed or imported merely to inspect them.
+The Python files preserve the supplied scripts, with the private PIM URL replaced by a placeholder and a short archival header added. Workbook names, batch offsets, logging labels, and execution behavior are retained. They execute work at module level and should not be imported or run merely to inspect them.
 
-The SQL file is a consolidated presentation of the reporting logic developed through the project discussion, not a byte-for-byte archive of the last production query. Source identifiers are placeholders. Explicit input validation, long-text handling, and deterministic collation retained from repository preparation are presentation-edition changes. The underlying private source data and full historical query revisions are not included.
+The v2 SQL follows the latest operational combined-list query, with source identifiers and environment-specific header text sanitized for publication. It retains the operational description grouping under `DATABASE_DEFAULT`; the earlier portfolio edition normalized descriptions differently. The two files therefore should not be treated as interchangeable executions of the same report.
 
-This repository intentionally has no demo dataset, test package, CI workflow, deployment tooling, or installation guide. Its purpose is to explain the work and make the relevant code easy to inspect.
+The SQL requires SQL Server 2017+ and database compatibility level 110+. Private inputs and environment identifiers are intentionally absent, so this is reporting code for inspection, not a ready-to-run deployment package. No live private SQL Server or PIM execution is part of this repository update.
+
+There is intentionally no demo dataset, test package, CI workflow, deployment tooling, or installation guide. The repository showcases the actual scripts and explains the work in one place.
 
 ### Attribution and Scope
 
-The company name and aggregate figures were approved by the project owner for this case study. Raw company records, actual mapping workbooks, credentials, and licensed reference-database content are excluded.
+The company name and aggregate figures were approved by the project owner for this case study. Raw company records, mapping workbooks, credentials, private endpoints, and licensed reference-database content are excluded.
 
 This is an independent portfolio case study, not an official Standard Motor Products or Auto Care Association publication. Referenced standards and names belong to their respective owners. No software redistribution license is granted here.
