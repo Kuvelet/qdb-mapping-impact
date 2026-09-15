@@ -196,12 +196,7 @@ The latest report is [catalog_mapping_impact_v2.sql](catalog_mapping_impact_v2.s
 
 ### Prepare a Distinct Work List
 
-I first used bcp to load the 70-million-row source file into a raw SQL Server table. I then extracted its distinct notes:
-
-```sql
-SELECT DISTINCT [Note]
-FROM [dbo].[LowConfidence_Raw];
-```
+I first used bcp to load the 70-million-row source file into a raw SQL Server table. I then extracted its distinct notes.
 
 Keeping the raw import separate preserved the original records while creating a manageable review population. I brought the distinct notes into Excel, determined their corresponding Qdb text and parameters, and used that workbook as input to the Python mapping scripts. SQL was therefore used both before automation, to prepare the notes, and afterward, to analyze mapping status and application effect.
 
